@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Caja de Ahorro: Dashboard con Configuración y Clave Admin</title>
+    <!-- Bootstrap + Iconos + DataTables + Chart.js -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+    <style>
+        body { background: #f0f5fa; font-family: 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { background: linear-gradient(145deg, #0a2b3e 0%, #0a2f44 100%); min-height: 100vh; }
+        .sidebar .nav-link { color: #e0f2fe; font-weight: 500; padding: 12px 20px; margin: 5px 10px; border-radius: 16px; }
+        .sidebar .nav-link i { width: 28px; margin-right: 12px; }
+        .sidebar .nav-link.active, .sidebar .nav-link:hover { background: #1e6f5c; color: white; }
+        .main-content { padding: 24px 30px; }
+        .card-dashboard { border: none; border-radius: 28px; background: white; box-shadow: 0 8px 20px rgba(0,0,0,0.02); }
+        .kpi-card { background: white; border-radius: 28px; padding: 1rem; text-align: center; border-left: 6px solid #2c7da0; }
+        .badge-mora { background: #e63946; color: white; padding: 5px 12px; border-radius: 40px; }
+        .badge-dia { background: #2c8c5e; color: white; }
+        .loader-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .config-panel { background: #fff8e7; border-left: 5px solid #ffc107; margin-bottom: 20px; }
+        @media (max-width: 768px) { .sidebar { min-height: auto; } .main-content { padding: 16px; } }
+    </style>
+</head>
+<body>
+<div id="loaderOverlay" class="loader-overlay" style="display: none;"><div class="spinner-border text-light"></div><span class="text-light ms-3">Cargando datos financieros...</span></div>
+<div class="container-fluid p-0">
+    <div class="row g-0">
+        <!-- Sidebar con nueva pestaña Configuración -->
+        <div class="col-md-3 col-lg-2 sidebar p-3">
+            <div class="text-center mb-4 mt-2"><i class="fas fa-piggy-bank fs-1 text-white"></i><h5 class="text-white mt-2">Futuro Mejor</h5><small class="text-info-emphasis">Caja de Ahorro</small></div>
+            <ul class="nav nav-pills flex-column mb-auto">
+                <li class="nav-item"><a href="#" class="nav-link active" id="btnUsuarioView"><i class="fas fa-user-circle"></i> Vista Usuario</a></li>
+                <li class="nav-item"><a href="#" class="nav-link" id="btnAdminView"><i class="fas fa-chart-line"></i> Administrador</a></li>
+                <li class="nav-item"><a href="#" class="nav-link" id="btnConfigView"><i class="fas fa-cog"></i> Configuración</a></li>
+            </ul>
+            <hr class="text-white-50">
+            <div class="small text-white-50 text-center mt-3">Filtro automático: ABONO_C<br>Admin con clave</div>
+        </div>
+
+        <!-- Contenido principal -->
+        <div class="col-md-9 col-lg-10 main-content">
+            <!-- Vista Usuario -->
+            <div id="userPanel" class="view-panel">
+                <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                    <h3><i class="fas fa-user-friends text-primary me-2"></i>Panel del Cliente</h3>
+                    <div class="w-50 w-md-25">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+                            <input type="text" id="searchCliente" class="form-control" placeholder="Buscar por nombre..." autocomplete="off" list="listaClientes">
+                            <datalist id="listaClientes"></datalist>
+                        </div>
+                    </div>
+                </div>
+                <div id="resumenCliente" class="row mb-4"></div>
+                <div id="alertasClientePanel" class="mb-3"></div>
+                <div id="listaCreditosCliente" class="card-dashboard card p-3 mb-4"></div>
+                <div id="detalleCreditos" class="card-dashboard card p-3 mt-3"></div>
+                <div id="graficosCliente" class="row mt-4"></div>
+            </div>
+
+            <!-- Vista Administrador (protegida) -->
+            <div id="adminPanel" class="view-panel" style="display: none;">
+                <div id="adminProtegido" style="display: none;">
+                    <h3><i class="fas fa-chart-simple text-secondary me-2"></i>Panel Administrador</h3>
+                    <div class="row g-3 mb-4" id="kpisAdmin"></div>
+                    <div class="card-dashboard card p-3 mb-4">
+                        <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+                            <label class="fw-bold">Filtros:</label>
+                            <select id="filtroClienteAdmin" class="form-select w-auto"><option value="">Todos los clientes</option></select>
+                            <select id="filtroEstadoAdmin" class="form-select w-auto"><option value="">Todos los estados</option><option value="mora">En mora</option><option value="dia">Al día</option></select>
+                            <input type="number" id="filtroMontoMin" class="form-control w-auto" placeholder="Monto mínimo">
+                            <button id="aplicarFiltros" class="btn btn-primary btn-sm">Filtrar</button>
+                        </div>
+                        <div class="table-responsive"><table id="tablaCarteraGeneral" class="table table-striped" style="width:100%"></table></div>
+                    </div>
+                    <div class="card-dashboard card p-3"><h5><i class="fas fa-balance-scale me-2"></i> Conciliación Financiera</h5><div id="conciliacionInfo" class="alert alert-info"></div></div>
+                </div>
+                <div id="adminBloqueado" class="alert alert-warning text-center" style="display: none;">
+                    <i class="fas fa-lock me-2"></i> Acceso restringido. Debe ingresar la clave de administrador.
+                </div>
+            </div>
+
+            <!-- Vista Configuración (nueva pestaña) -->
+            <div id="configPanel" class="view-panel" style="display: none;">
+                <div class="card-dashboard card p-4">
+                    <h4><i class="fas fa-cogs me-2"></i> Configuración de URLs (CSV)</h4>
+                    <p class="small">Las URLs deben apuntar a cada hoja publicada en formato CSV. <strong>La hoja BANCO_REGISTRO filtrará solo las filas con CODIGO_DETALLE = 'ABONO_C'</strong>.</p>
+                    <div class="alert alert-info small">
+                        <strong>URLs actuales (por defecto):</strong><br>
+                        CLIENTES: <code>https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=686052004&single=true&output=csv</code><br>
+                        AMORTIZACION: <code>https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=590717664&single=true&output=csv</code><br>
+                        BANCO_REGISTRO: <code>https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=854853050&single=true&output=csv</code>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">URL CLIENTES (CSV)</label>
+                            <input type="text" id="urlClientes" class="form-control" placeholder="https://...">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">URL AMORTIZACION (CSV)</label>
+                            <input type="text" id="urlAmortizacion" class="form-control" placeholder="https://...">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">URL BANCO_REGISTRO (CSV)</label>
+                            <input type="text" id="urlBanco" class="form-control" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="mt-4 d-flex gap-2">
+                        <button id="btnGuardarUrls" class="btn btn-primary"><i class="fas fa-save"></i> Guardar y recargar datos</button>
+                        <button id="btnProbarUrls" class="btn btn-outline-secondary"><i class="fas fa-vial"></i> Probar conexión</button>
+                        <button id="btnResetUrls" class="btn btn-outline-danger"><i class="fas fa-undo-alt"></i> Restaurar URLs por defecto</button>
+                    </div>
+                    <div id="mensajeConfig" class="mt-3 small text-danger"></div>
+                </div>
+            </div>
+
+            <footer class="text-muted text-center mt-4 small">Dashboard - Solo contabiliza pagos con CODIGO = "ABONO_C" en BANCO_REGISTRO</footer>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para solicitar clave de administrador (usando SweetAlert no, usamos prompt nativo por simplicidad, pero mejor un modal Bootstrap) -->
+<div class="modal fade" id="modalClaveAdmin" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-key me-2"></i> Acceso Administrador</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Ingrese la clave de administrador para acceder a los datos financieros.</p>
+                <input type="password" id="claveAdminInput" class="form-control" placeholder="Clave numérica" autocomplete="off">
+                <div id="errorClave" class="text-danger small mt-2" style="display: none;">Clave incorrecta. Intente de nuevo.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="btnVerificarClave" class="btn btn-primary">Verificar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+    // URLs por defecto (las correctas que compartiste)
+    const DEFAULT_URLS = {
+        clientes: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=686052004&single=true&output=csv",
+        amortizacion: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=590717664&single=true&output=csv",
+        banco: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqROzPP7HhjhSjb72KNBmg9DWXUxy1jfeCUPZm1uPEu4DoRAffk5ABAHVXgMtOuQ/pub?gid=854853050&single=true&output=csv"
+    };
+
+    // Variables globales
+    let urlsGuardadas = { ...DEFAULT_URLS };
+    let modeloGlobal = { clientes: [] };
+    let clienteActual = null;
+    let dataTableAdmin = null;
+    let chartsInst = { evol: null, cuotas: null, saldo: null };
+    let adminAuthenticated = false;  // estado de autenticación admin
+
+    function mostrarLoader(show) {
+        document.getElementById("loaderOverlay").style.display = show ? "flex" : "none";
+    }
+
+    // Funciones de parseo CSV
+    async function fetchCSVToObjects(url) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const text = await response.text();
+        const lines = text.split(/\r?\n/);
+        if (lines.length < 2) throw new Error("CSV vacío");
+        const parseRow = (line) => {
+            const cells = [];
+            let inQuote = false, current = "";
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') inQuote = !inQuote;
+                else if (ch === ',' && !inQuote) {
+                    cells.push(current.trim());
+                    current = "";
+                } else current += ch;
+            }
+            cells.push(current.trim());
+            return cells;
+        };
+        const headersRaw = parseRow(lines[0]);
+        const headers = headersRaw.map(h => h.trim().toUpperCase().replace(/\s+/g, '_'));
+        const dataRows = lines.slice(1).filter(l => l.trim() !== "").map(parseRow);
+        return dataRows.map(row => {
+            let obj = {};
+            headers.forEach((h, idx) => { obj[h] = row[idx] !== undefined ? row[idx] : ""; });
+            return obj;
+        });
+    }
+
+    function limpiarNumero(val) {
+        if (val === undefined || val === null || val === "") return 0;
+        if (typeof val === "number") return val;
+        let str = String(val).trim().replace(/,/g, '.');
+        str = str.replace(/[^0-9.-]/g, '');
+        const num = parseFloat(str);
+        return isNaN(num) ? 0 : num;
+    }
+    function limpiarTexto(str) { return (str || "").toString().trim().toUpperCase(); }
+
+    // ETL con filtro ABONO_C
+    async function ejecutarETL(urls) {
+        mostrarLoader(true);
+        try {
+            const clientesRaw = await fetchCSVToObjects(urls.clientes);
+            const amortRaw = await fetchCSVToObjects(urls.amortizacion);
+            const bancoRaw = await fetchCSVToObjects(urls.banco);
+            console.log("Clientes:", clientesRaw.length, "Amort:", amortRaw.length, "Pagos (raw):", bancoRaw.length);
+
+            if (clientesRaw.length === 0) throw new Error("No se encontraron datos en CLIENTES.");
+
+            // Mapeo cliente
+            const clienteNombreMap = new Map();
+            const clienteCreditoMap = new Map();
+            for (let row of clientesRaw) {
+                let codigoCl = null, nombre = null, codigoCr = null;
+                for (let k in row) {
+                    let uk = k.toUpperCase();
+                    if (uk.includes("CODIGO_CL")) codigoCl = limpiarTexto(row[k]);
+                    if (uk.includes("NOMBRES") || uk.includes("NOMBRE")) nombre = limpiarTexto(row[k]);
+                    if (uk.includes("CODIGO_CR")) codigoCr = limpiarTexto(row[k]);
+                }
+                if (codigoCl && nombre) clienteNombreMap.set(codigoCl, nombre);
+                if (codigoCr && codigoCl) clienteCreditoMap.set(codigoCr, codigoCl);
+            }
+
+            // Amortizaciones
+            const amortPorCredito = new Map();
+            for (let row of amortRaw) {
+                let codigoCr = null, nroCuota = 0, capital = 0, interes = 0, saldoFinal = 0;
+                for (let k in row) {
+                    let uk = k.toUpperCase();
+                    if (uk.includes("CODIGO_CR")) codigoCr = limpiarTexto(row[k]);
+                    if (uk.includes("NRO_CUOTA") || uk.includes("NRO CUOTA")) nroCuota = parseInt(row[k]) || 0;
+                    if (uk.includes("CAPITAL")) capital = limpiarNumero(row[k]);
+                    if (uk.includes("INTERES")) interes = limpiarNumero(row[k]);
+                    if (uk.includes("SALDO_FINAL") || uk.includes("SALDO FINAL")) saldoFinal = limpiarNumero(row[k]);
+                }
+                if (!codigoCr) continue;
+                if (!amortPorCredito.has(codigoCr)) amortPorCredito.set(codigoCr, []);
+                amortPorCredito.get(codigoCr).push({ cuota: nroCuota, capital, interes, saldo: saldoFinal });
+            }
+            for (let arr of amortPorCredito.values()) arr.sort((a,b) => a.cuota - b.cuota);
+
+            // Pagos solo ABONO_C
+            const pagosPorCredito = new Map();
+            for (let row of bancoRaw) {
+                let codigoCr = null, monto = 0, fecha = "";
+                let codigoDetalle = "";
+                for (let k in row) {
+                    let uk = k.toUpperCase();
+                    if (uk.includes("CODIGO_CR")) codigoCr = limpiarTexto(row[k]);
+                    if (uk.includes("CODIGO_DETALLE") || (uk.includes("CODIGO") && !uk.includes("CODIGO_CR"))) codigoDetalle = limpiarTexto(row[k]);
+                    if (uk.includes("VALOR")) monto = limpiarNumero(row[k]);
+                    if (uk.includes("FECHA")) fecha = row[k];
+                }
+                if (!codigoCr || monto === 0) continue;
+                if (codigoDetalle !== "ABONO_C") continue; // 🔥 Filtro clave
+                if (!pagosPorCredito.has(codigoCr)) pagosPorCredito.set(codigoCr, []);
+                pagosPorCredito.get(codigoCr).push({ monto, fecha });
+            }
+
+            // Construir modelo
+            const creditosPorNombre = new Map();
+            for (let [codigoCr, amortizacion] of amortPorCredito.entries()) {
+                const codigoCl = clienteCreditoMap.get(codigoCr);
+                if (!codigoCl) continue;
+                const nombreCliente = clienteNombreMap.get(codigoCl);
+                if (!nombreCliente) continue;
+                const pagos = pagosPorCredito.get(codigoCr) || [];
+                const totalPagado = pagos.reduce((s,p) => s + p.monto, 0);
+                const totalProgramado = amortizacion.reduce((s,c) => s + c.capital + c.interes, 0);
+                const saldoPendiente = Math.max(0, totalProgramado - totalPagado);
+                let interesDev = 0, acum = 0;
+                for (let c of amortizacion) {
+                    const suma = c.capital + c.interes;
+                    if (totalPagado < acum + suma) interesDev += c.interes;
+                    acum += suma;
+                }
+                let tieneMora = false, acumulado = 0;
+                for (let c of amortizacion) {
+                    acumulado += c.capital + c.interes;
+                    if (totalPagado < acumulado) { tieneMora = true; break; }
+                }
+                const montoTotal = amortizacion.reduce((s,c) => s + c.capital, 0);
+                const creditoObj = {
+                    codigo: codigoCr,
+                    monto_total: montoTotal,
+                    amortizacion: amortizacion,
+                    pagos: pagos,
+                    saldo_pendiente: saldoPendiente,
+                    mora: tieneMora,
+                    interes_devengado: interesDev,
+                    total_programado: totalProgramado,
+                    total_pagado_abs: totalPagado
+                };
+                if (!creditosPorNombre.has(nombreCliente)) creditosPorNombre.set(nombreCliente, []);
+                creditosPorNombre.get(nombreCliente).push(creditoObj);
+            }
+
+            modeloGlobal.clientes = Array.from(creditosPorNombre.entries()).map(([nombre, creditos]) => ({ nombre, creditos }));
+            const datalist = document.getElementById("listaClientes");
+            datalist.innerHTML = "";
+            modeloGlobal.clientes.forEach(c => { let opt = document.createElement("option"); opt.value = c.nombre; datalist.appendChild(opt); });
+            mostrarLoader(false);
+            return true;
+        } catch (err) {
+            console.error(err);
+            mostrarLoader(false);
+            document.getElementById("mensajeConfig").innerHTML = `❌ Error ETL: ${err.message}`;
+            return false;
+        }
+    }
+
+    // Vistas (Usuario y Admin)
+    function renderizarVistaCliente(nombreCliente) {
+        const cliente = modeloGlobal.clientes.find(c => c.nombre === nombreCliente);
+        if (!cliente) return;
+        clienteActual = cliente;
+        const totalSaldo = cliente.creditos.reduce((s, cred) => s + cred.saldo_pendiente, 0);
+        const tieneMora = cliente.creditos.some(c => c.mora);
+        document.getElementById("resumenCliente").innerHTML = `
+            <div class="col-md-4"><div class="kpi-card"><i class="fas fa-coins fs-2 text-primary"></i><h4>Saldo Total</h4><h3>$${totalSaldo.toFixed(2)}</h3></div></div>
+            <div class="col-md-4"><div class="kpi-card"><i class="fas fa-credit-card"></i><h4>Créditos Activos</h4><h3>${cliente.creditos.length}</h3></div></div>
+            <div class="col-md-4"><div class="kpi-card"><i class="fas fa-chart-line"></i><h4>Estado General</h4><h3><span class="badge ${tieneMora ? 'badge-mora' : 'badge-dia'}">${tieneMora ? '⚠️ En Mora' : '✅ Al día'}</span></h3></div></div>
+        `;
+        let alertas = "";
+        cliente.creditos.forEach(cred => { if (cred.mora) alertas += `<div class="alert alert-warning alert-custom"><i class="fas fa-exclamation-triangle"></i> Crédito ${cred.codigo} - Cuotas vencidas. Saldo: $${cred.saldo_pendiente.toFixed(2)}</div>`; });
+        document.getElementById("alertasClientePanel").innerHTML = alertas || `<div class="alert alert-success"><i class="fas fa-check-circle"></i> No hay créditos en mora.</div>`;
+        let listaHtml = `<h5>📋 Seleccione un crédito para ver detalles</h5><div class="list-group">`;
+        cliente.creditos.forEach((cred, idx) => {
+            listaHtml += `<button class="list-group-item list-group-item-action creditoSelector" data-idx="${idx}">
+                <div class="d-flex justify-content-between"><strong>${cred.codigo}</strong> <span class="badge ${cred.mora ? 'bg-danger' : 'bg-success'}">${cred.mora ? 'Mora' : 'Normal'}</span></div>
+                <small>Saldo: $${cred.saldo_pendiente.toFixed(2)} | Monto total: $${cred.monto_total.toFixed(2)}</small>
+            </button>`;
+        });
+        listaHtml += `</div>`;
+        document.getElementById("listaCreditosCliente").innerHTML = listaHtml;
+        document.querySelectorAll(".creditoSelector").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.dataset.idx);
+                mostrarDetalleCredito(cliente.creditos[idx], cliente.nombre);
+            });
+        });
+        if (cliente.creditos.length) mostrarDetalleCredito(cliente.creditos[0], cliente.nombre);
+    }
+
+    function mostrarDetalleCredito(credito, nombreCliente) {
+        const tablaAmort = `<table id="tablaAmortDetalle" class="table table-bordered table-sm" style="width:100%"><thead><tr><th>Cuota</th><th>Capital</th><th>Interés</th><th>Saldo</th><th>Cuota Total</th></tr></thead><tbody>
+            ${credito.amortizacion.map(c => `<tr><td>${c.cuota}</td><td>$${c.capital.toFixed(2)}</td><td>$${c.interes.toFixed(2)}</td><td>$${c.saldo.toFixed(2)}</td><td>$${(c.capital + c.interes).toFixed(2)}</td></tr>`).join('')}
+        </tbody>得到`;
+        const tablaPagos = `<table id="tablaPagosDetalle" class="table table-sm"><thead><tr><th>Monto</th><th>Fecha</th></tr></thead><tbody>
+            ${credito.pagos.length ? credito.pagos.map(p => `<tr><td>$${p.monto.toFixed(2)}</td><td>${p.fecha || 'N/D'}</td></tr>`).join('') : '<tr><td colspan="2">Sin pagos registrados</td></tr>'}
+        </tbody>得到`;
+        const comparacion = `<div class="row mt-2"><div class="col-md-6 alert alert-info">Total Programado (Cap+Int): $${credito.total_programado.toFixed(2)}</div>
+        <div class="col-md-6 alert alert-success">Total Pagado: $${credito.total_pagado_abs.toFixed(2)}</div></div>`;
+        document.getElementById("detalleCreditos").innerHTML = `
+            <h5>📄 Crédito ${credito.codigo} - Cliente: ${nombreCliente}</h5>
+            <div class="row mb-2"><div class="col-md-6"><strong>Monto Total:</strong> $${credito.monto_total.toFixed(2)}</div>
+            <div class="col-md-6"><strong>Interés Devengado Pendiente:</strong> $${credito.interes_devengado.toFixed(2)}</div></div>
+            <ul class="nav nav-tabs"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabAmort">Amortización</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPagos">Pagos realizados</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabComp">Comparación</button></li></ul>
+            <div class="tab-content mt-3"><div class="tab-pane active" id="tabAmort">${tablaAmort}</div><div class="tab-pane" id="tabPagos">${tablaPagos}</div><div class="tab-pane" id="tabComp">${comparacion}</div></div>
+        `;
+        if ($.fn.DataTable.isDataTable("#tablaAmortDetalle")) $("#tablaAmortDetalle").DataTable().destroy();
+        $("#tablaAmortDetalle").DataTable({ pageLength: 5, language: { url: "//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json" } });
+        renderizarGraficos(credito);
+    }
+
+    function renderizarGraficos(credito) {
+        const container = document.getElementById("graficosCliente");
+        container.innerHTML = `<div class="col-md-6"><div class="card p-2"><canvas id="chartEvolucion" height="200"></canvas><p class="text-center">Evolución Pagos vs Programado</p></div></div>
+        <div class="col-md-6"><div class="card p-2"><canvas id="chartCuotas" height="200"></canvas><p class="text-center">Cuotas Pagadas vs Pendientes</p></div></div>
+        <div class="col-md-12 mt-3"><div class="card p-2"><canvas id="chartSaldo" height="150"></canvas><p class="text-center">Saldo pendiente actual</p></div></div>`;
+        let acumProgramado = [], acumulado = 0;
+        for (let c of credito.amortizacion) { acumulado += c.capital + c.interes; acumProgramado.push(acumulado); }
+        let pagosAcum = [];
+        for (let i = 0; i < acumProgramado.length; i++) pagosAcum.push(Math.min(credito.total_pagado_abs, acumProgramado[i]));
+        if (chartsInst.evol) chartsInst.evol.destroy();
+        chartsInst.evol = new Chart(document.getElementById("chartEvolucion"), { type: 'line', data: { labels: credito.amortizacion.map((_,i)=>`Cuota ${i+1}`), datasets: [{ label: 'Programado acum', data: acumProgramado, borderColor: '#2c7da0' }, { label: 'Pagado acum', data: pagosAcum, borderColor: '#2c8c5e' }] } });
+        let completas = 0, acc = 0;
+        for (let c of credito.amortizacion) { acc += c.capital + c.interes; if (credito.total_pagado_abs >= acc) completas++; else break; }
+        if (chartsInst.cuotas) chartsInst.cuotas.destroy();
+        chartsInst.cuotas = new Chart(document.getElementById("chartCuotas"), { type: 'doughnut', data: { labels: ['Pagadas', 'Pendientes'], datasets: [{ data: [completas, credito.amortizacion.length - completas], backgroundColor: ['#2c8c5e', '#e63946'] }] } });
+        if (chartsInst.saldo) chartsInst.saldo.destroy();
+        chartsInst.saldo = new Chart(document.getElementById("chartSaldo"), { type: 'bar', data: { labels: ['Saldo actual'], datasets: [{ label: 'Saldo pendiente', data: [credito.saldo_pendiente], backgroundColor: '#1e6f5c' }] } });
+    }
+
+    function actualizarAdmin() {
+        if (!adminAuthenticated) return;
+        const todos = [];
+        for (let cl of modeloGlobal.clientes) for (let cred of cl.creditos) todos.push({ cliente: cl.nombre, codigo: cred.codigo, monto_total: cred.monto_total, saldo: cred.saldo_pendiente, mora: cred.mora, pagado: cred.total_pagado_abs });
+        const carteraTotal = todos.reduce((s,c)=>s+c.saldo,0);
+        const carteraVencida = todos.filter(c=>c.mora).reduce((s,c)=>s+c.saldo,0);
+        const liquidez = todos.reduce((s,c)=>s+c.pagado,0);
+        document.getElementById("kpisAdmin").innerHTML = `
+            <div class="col-md-3"><div class="kpi-card"><i class="fas fa-dollar-sign"></i><h5>Cartera Total</h5><h4>$${carteraTotal.toFixed(2)}</h4></div></div>
+            <div class="col-md-3"><div class="kpi-card"><i class="fas fa-exclamation-triangle text-danger"></i><h5>Cartera Vencida</h5><h4>$${carteraVencida.toFixed(2)}</h4></div></div>
+            <div class="col-md-3"><div class="kpi-card"><i class="fas fa-hand-holding-usd"></i><h5>Liquidez (Pagos)</h5><h4>$${liquidez.toFixed(2)}</h4></div></div>
+            <div class="col-md-3"><div class="kpi-card"><i class="fas fa-users"></i><h5>Clientes / Créditos</h5><h4>${modeloGlobal.clientes.length} / ${todos.length}</h4></div></div>
+        `;
+        const selectCliente = document.getElementById("filtroClienteAdmin");
+        selectCliente.innerHTML = '<option value="">Todos los clientes</option>' + modeloGlobal.clientes.map(c=>`<option value="${c.nombre}">${c.nombre}</option>`).join('');
+        aplicarFiltrosTabla();
+        const totalAmort = modeloGlobal.clientes.reduce((s,cli)=> s + cli.creditos.reduce((a,cred)=> a + cred.total_programado,0),0);
+        const totalPagado = modeloGlobal.clientes.reduce((s,cli)=> s + cli.creditos.reduce((a,cred)=> a + cred.total_pagado_abs,0),0);
+        document.getElementById("conciliacionInfo").innerHTML = `<strong>Total Amortización (Capital+Interés):</strong> $${totalAmort.toFixed(2)}<br>
+        <strong>Total Pagos Registrados (solo ABONO_C):</strong> $${totalPagado.toFixed(2)}<br>
+        <strong>Diferencia (Saldo por Cobrar):</strong> $${(totalAmort - totalPagado).toFixed(2)}`;
+    }
+
+    function aplicarFiltrosTabla() {
+        if (!adminAuthenticated) return;
+        const clienteFiltro = document.getElementById("filtroClienteAdmin").value;
+        const estadoFiltro = document.getElementById("filtroEstadoAdmin").value;
+        const montoMin = parseFloat(document.getElementById("filtroMontoMin").value) || 0;
+        let datos = [];
+        for (let cl of modeloGlobal.clientes) {
+            if (clienteFiltro && cl.nombre !== clienteFiltro) continue;
+            for (let cred of cl.creditos) {
+                if (estadoFiltro === "mora" && !cred.mora) continue;
+                if (estadoFiltro === "dia" && cred.mora) continue;
+                if (cred.monto_total < montoMin) continue;
+                datos.push([cl.nombre, cred.codigo, cred.monto_total, cred.saldo_pendiente, cred.mora ? "En mora" : "Al día", cred.total_pagado_abs]);
+            }
+        }
+        if (dataTableAdmin) dataTableAdmin.clear().rows.add(datos).draw();
+        else { if ($.fn.DataTable.isDataTable("#tablaCarteraGeneral")) $("#tablaCarteraGeneral").DataTable().destroy(); $("#tablaCarteraGeneral").html(`<thead><tr><th>Cliente</th><th>Código Crédito</th><th>Monto Total</th><th>Saldo Pendiente</th><th>Estado</th><th>Pagado</th></tr></thead><tbody></tbody>`); dataTableAdmin = $("#tablaCarteraGeneral").DataTable({ data: datos, pageLength: 8, language: { url: "//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json" } }); }
+    }
+
+    // Manejo de la clave de administrador
+    let adminModal = null;
+    function mostrarModalClave() {
+        document.getElementById("claveAdminInput").value = "";
+        document.getElementById("errorClave").style.display = "none";
+        adminModal.show();
+    }
+    function verificarClave() {
+        const clave = document.getElementById("claveAdminInput").value;
+        if (clave === "1723558571") {
+            adminAuthenticated = true;
+            adminModal.hide();
+            // Mostrar contenido protegido
+            document.getElementById("adminProtegido").style.display = "block";
+            document.getElementById("adminBloqueado").style.display = "none";
+            actualizarAdmin();  // Cargar los datos actuales
+        } else {
+            document.getElementById("errorClave").style.display = "block";
+            adminAuthenticated = false;
+            document.getElementById("adminProtegido").style.display = "none";
+            document.getElementById("adminBloqueado").style.display = "block";
+        }
+    }
+
+    // Gestión de URLs
+    async function guardarYCargar() {
+        const urls = {
+            clientes: document.getElementById("urlClientes").value.trim(),
+            amortizacion: document.getElementById("urlAmortizacion").value.trim(),
+            banco: document.getElementById("urlBanco").value.trim()
+        };
+        if (!urls.clientes || !urls.amortizacion || !urls.banco) {
+            document.getElementById("mensajeConfig").innerHTML = "❌ Debes ingresar las tres URLs.";
+            return;
+        }
+        localStorage.setItem("csvUrls", JSON.stringify(urls));
+        const ok = await ejecutarETL(urls);
+        if (ok) {
+            document.getElementById("mensajeConfig").innerHTML = "✅ Datos recargados correctamente (solo ABONO_C).";
+            if (modeloGlobal.clientes.length) renderizarVistaCliente(modeloGlobal.clientes[0].nombre);
+            if (adminAuthenticated) actualizarAdmin();
+        } else {
+            document.getElementById("mensajeConfig").innerHTML = "❌ Error al cargar los datos. Revisa las URLs.";
+        }
+    }
+
+    async function probarUrls() {
+        const urls = {
+            clientes: document.getElementById("urlClientes").value.trim(),
+            amortizacion: document.getElementById("urlAmortizacion").value.trim(),
+            banco: document.getElementById("urlBanco").value.trim()
+        };
+        mostrarLoader(true);
+        try {
+            await fetchCSVToObjects(urls.clientes);
+            await fetchCSVToObjects(urls.amortizacion);
+            await fetchCSVToObjects(urls.banco);
+            document.getElementById("mensajeConfig").innerHTML = "✅ Las URLs son accesibles y devuelven CSV válido.";
+        } catch(e) {
+            document.getElementById("mensajeConfig").innerHTML = `❌ Error: ${e.message}`;
+        }
+        mostrarLoader(false);
+    }
+
+    function resetUrls() {
+        document.getElementById("urlClientes").value = DEFAULT_URLS.clientes;
+        document.getElementById("urlAmortizacion").value = DEFAULT_URLS.amortizacion;
+        document.getElementById("urlBanco").value = DEFAULT_URLS.banco;
+        document.getElementById("mensajeConfig").innerHTML = "URLs restauradas a las predeterminadas. Guarda para aplicar.";
+    }
+
+    function cargarUrlsGuardadas() {
+        const guardadas = localStorage.getItem("csvUrls");
+        if (guardadas) {
+            try {
+                const obj = JSON.parse(guardadas);
+                document.getElementById("urlClientes").value = obj.clientes || "";
+                document.getElementById("urlAmortizacion").value = obj.amortizacion || "";
+                document.getElementById("urlBanco").value = obj.banco || "";
+                if (obj.clientes && obj.amortizacion && obj.banco) {
+                    ejecutarETL(obj).then(ok => { if (ok && modeloGlobal.clientes.length) renderizarVistaCliente(modeloGlobal.clientes[0].nombre); });
+                }
+            } catch(e) {}
+        } else {
+            document.getElementById("urlClientes").value = DEFAULT_URLS.clientes;
+            document.getElementById("urlAmortizacion").value = DEFAULT_URLS.amortizacion;
+            document.getElementById("urlBanco").value = DEFAULT_URLS.banco;
+            ejecutarETL(DEFAULT_URLS).then(ok => { if (ok && modeloGlobal.clientes.length) renderizarVistaCliente(modeloGlobal.clientes[0].nombre); });
+        }
+    }
+
+    // Navegación entre pestañas
+    function mostrarPanel(panelId) {
+        document.querySelectorAll('.view-panel').forEach(panel => panel.style.display = 'none');
+        document.getElementById(panelId).style.display = 'block';
+        // Actualizar clase activa
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => link.classList.remove('active'));
+        if (panelId === 'userPanel') document.getElementById('btnUsuarioView').classList.add('active');
+        else if (panelId === 'adminPanel') document.getElementById('btnAdminView').classList.add('active');
+        else if (panelId === 'configPanel') document.getElementById('btnConfigView').classList.add('active');
+    }
+
+    // Eventos
+    document.getElementById("btnUsuarioView").addEventListener("click", (e) => { e.preventDefault(); mostrarPanel('userPanel'); });
+    document.getElementById("btnAdminView").addEventListener("click", (e) => { e.preventDefault(); mostrarPanel('adminPanel'); if (!adminAuthenticated) mostrarModalClave(); });
+    document.getElementById("btnConfigView").addEventListener("click", (e) => { e.preventDefault(); mostrarPanel('configPanel'); });
+    document.getElementById("btnGuardarUrls").addEventListener("click", guardarYCargar);
+    document.getElementById("btnProbarUrls").addEventListener("click", probarUrls);
+    document.getElementById("btnResetUrls").addEventListener("click", resetUrls);
+    document.getElementById("btnVerificarClave").addEventListener("click", verificarClave);
+    document.getElementById("searchCliente").addEventListener("change", function() { if (this.value && modeloGlobal.clientes.some(c=>c.nombre === this.value)) renderizarVistaCliente(this.value); });
+    document.getElementById("searchCliente").addEventListener("input", function() { if (modeloGlobal.clientes.some(c=>c.nombre === this.value)) renderizarVistaCliente(this.value); });
+    document.getElementById("aplicarFiltros").addEventListener("click", () => aplicarFiltrosTabla());
+
+    // Inicializar modal
+    window.addEventListener('DOMContentLoaded', () => {
+        adminModal = new bootstrap.Modal(document.getElementById('modalClaveAdmin'));
+        cargarUrlsGuardadas();
+        mostrarPanel('userPanel');
+    });
+</script>
+</body>
+</html>
